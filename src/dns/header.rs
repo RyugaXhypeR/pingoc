@@ -4,7 +4,7 @@ use std::error::Error;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-pub enum ResponseCode {
+pub enum DnsResponseCode {
     NoError = 0,
     FormErr = 1,
     ServFail = 2,
@@ -13,33 +13,33 @@ pub enum ResponseCode {
     Refused = 5,
 }
 
-impl ResponseCode {
-    pub fn from_u8(value: u8) -> ResponseCode {
+impl DnsResponseCode {
+    pub fn from_u8(value: u8) -> DnsResponseCode {
         match value {
-            0 => ResponseCode::NoError,
-            1 => ResponseCode::FormErr,
-            2 => ResponseCode::ServFail,
-            3 => ResponseCode::NxDomain,
-            4 => ResponseCode::NotImp,
-            5 => ResponseCode::Refused,
+            0 => DnsResponseCode::NoError,
+            1 => DnsResponseCode::FormErr,
+            2 => DnsResponseCode::ServFail,
+            3 => DnsResponseCode::NxDomain,
+            4 => DnsResponseCode::NotImp,
+            5 => DnsResponseCode::Refused,
             _ => panic!("Invalid response code"),
         }
     }
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct Header {
+pub struct DnsHeader {
     pub id: u16,
 
     // flags
-    pub query_response: bool,        // 1 bit
-    pub opcode: u8,                  // 4 bits
-    pub authoritative_answer: bool,  // 1 bit
-    pub truncated_message: bool,     // 1 bit
-    pub recursion_desired: bool,     // 1 bit
-    pub recursion_available: bool,   // 1 bit
-    pub reserved: u8,                // 3 bits
-    pub response_code: ResponseCode, // 4 bits
+    pub query_response: bool,           // 1 bit
+    pub opcode: u8,                     // 4 bits
+    pub authoritative_answer: bool,     // 1 bit
+    pub truncated_message: bool,        // 1 bit
+    pub recursion_desired: bool,        // 1 bit
+    pub recursion_available: bool,      // 1 bit
+    pub reserved: u8,                   // 3 bits
+    pub response_code: DnsResponseCode, // 4 bits
 
     // counts
     pub question_count: u16,
@@ -48,7 +48,7 @@ pub struct Header {
     pub additional_count: u16,
 }
 
-impl Header {
+impl DnsHeader {
     /* Header section format
 
 
@@ -80,7 +80,7 @@ impl Header {
             recursion_desired: false,
             recursion_available: false,
             reserved: 0,
-            response_code: ResponseCode::NoError,
+            response_code: DnsResponseCode::NoError,
             question_count: 0,
             answer_count: 0,
             authority_count: 0,
@@ -90,7 +90,7 @@ impl Header {
 
     /// Reads a `DnsHeader` from a `PacketBuffer`.
     pub fn read(buffer: &mut PacketBuffer) -> Result<Self> {
-        let mut header = Header::new();
+        let mut header = DnsHeader::new();
         header.id = buffer.read_u16()?;
 
         let flags = buffer.read_u16()?;
@@ -122,7 +122,7 @@ impl Header {
         self.recursion_desired = (flags & RD_MASK) != 0;
         self.recursion_available = (flags & RA_MASK) != 0;
         self.reserved = ((flags & RESERVED_MASK) >> 4) as u8;
-        self.response_code = ResponseCode::from_u8((flags & RCODE_MASK) as u8);
+        self.response_code = DnsResponseCode::from_u8((flags & RCODE_MASK) as u8);
     }
 
     fn get_flags(&self) -> u16 {

@@ -1,18 +1,18 @@
-use super::{buffer::PacketBuffer, header::Header, question::Question, record::Record};
+use super::{buffer::PacketBuffer, header::DnsHeader, question::DnsQuestion, record::Record};
 use std::{error::Error, net::Ipv4Addr};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 #[derive(Debug)]
-pub struct Packet {
-    pub header: Header,
-    pub questions: Vec<Question>,
+pub struct DnsPacket {
+    pub header: DnsHeader,
+    pub questions: Vec<DnsQuestion>,
     pub answers: Vec<Record>,
     pub authorities: Vec<Record>,
     pub additional: Vec<Record>,
 }
 
-impl Packet {
+impl DnsPacket {
     /* Packet format
 
     +---------------------+
@@ -29,7 +29,7 @@ impl Packet {
     */
     pub fn new() -> Self {
         Self {
-            header: Header::new(),
+            header: DnsHeader::new(),
             questions: Vec::new(),
             answers: Vec::new(),
             authorities: Vec::new(),
@@ -38,11 +38,11 @@ impl Packet {
     }
 
     pub fn read(buffer: &mut PacketBuffer) -> Result<Self> {
-        let header = Header::read(buffer)?;
-        let mut packet = Packet::new();
+        let header = DnsHeader::read(buffer)?;
+        let mut packet = DnsPacket::new();
         packet.header = header;
         for _ in 0..header.question_count {
-            packet.questions.push(Question::read(buffer)?);
+            packet.questions.push(DnsQuestion::read(buffer)?);
         }
         for _ in 0..header.answer_count {
             packet.answers.push(Record::read(buffer)?);

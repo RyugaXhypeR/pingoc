@@ -7,13 +7,13 @@ use std::error::Error;
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Question {
+pub struct DnsQuestion {
     pub name: String,
     pub query_type: QueryType,
     pub query_class: QueryClass,
 }
 
-impl Question {
+impl DnsQuestion {
     /* Question section format
 
                                     1  1  1  1  1  1
@@ -37,7 +37,7 @@ impl Question {
     }
 
     pub fn read(buffer: &mut PacketBuffer) -> Result<Self> {
-        let mut question = Question::new("".to_string(), QueryType::A);
+        let mut question = DnsQuestion::new("".to_string(), QueryType::A);
         question.name = buffer.read_query_name()?;
         question.query_type = QueryType::from_u16(buffer.read_u16()?);
         question.query_class = QueryClass::from_u16(buffer.read_u16()?);

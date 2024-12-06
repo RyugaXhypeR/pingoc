@@ -1,20 +1,20 @@
-use crate::dns::header::ResponseCode;
+use crate::dns::header::DnsResponseCode;
 
-use super::{buffer::PacketBuffer, packet::Packet, query::QueryType, question::Question};
+use super::{buffer::PacketBuffer, packet::DnsPacket, query::QueryType, question::DnsQuestion};
 use std::error::Error;
 use std::net::{Ipv4Addr, UdpSocket};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-pub fn lookup(domain: &str, query_type: QueryType, server: (Ipv4Addr, u16)) -> Result<Packet> {
+pub fn lookup(domain: &str, query_type: QueryType, server: (Ipv4Addr, u16)) -> Result<DnsPacket> {
     let socket = UdpSocket::bind(("0.0.0.0", 43210))?;
-    let mut packet = Packet::new();
+    let mut packet = DnsPacket::new();
 
     packet.header.id = 1234;
     packet.header.question_count = 1;
     packet
         .questions
-        .push(Question::new(domain.into(), query_type));
+        .push(DnsQuestion::new(domain.into(), query_type));
 
     let mut buffer = PacketBuffer::new();
     packet.write(&mut buffer)?;
@@ -24,10 +24,10 @@ pub fn lookup(domain: &str, query_type: QueryType, server: (Ipv4Addr, u16)) -> R
     let mut buffer = PacketBuffer::new();
     socket.recv_from(&mut buffer.buffer)?;
 
-    Packet::read(&mut buffer)
+    DnsPacket::read(&mut buffer)
 }
 
-pub fn recursive_lookup(query_name: &str, query_type: QueryType) -> Result<Packet> {
+pub fn recursive_lookup(query_name: &str, query_type: QueryType) -> Result<DnsPacket> {
     let mut nameserver = Ipv4Addr::new(198, 41, 0, 4);
     loop {
         if cfg!(debug_assertions) {
@@ -39,8 +39,8 @@ pub fn recursive_lookup(query_name: &str, query_type: QueryType) -> Result<Packe
         let server = (nameserver, 53);
         let response = lookup(query_name, query_type, server)?;
 
-        if (!response.answers.is_empty() && response.header.response_code == ResponseCode::NoError)
-            || response.header.response_code == ResponseCode::NxDomain
+        if (!response.answers.is_empty() && response.header.response_code == DnsResponseCode::NoError)
+            || response.header.response_code == DnsResponseCode::NxDomain
         {
             return Ok(response);
         }
