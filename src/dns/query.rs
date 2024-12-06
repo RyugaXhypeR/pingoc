@@ -1,6 +1,6 @@
 /// Represents DNS query types.
 #[repr(u16)]
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum QueryType {
     /// A record maps a domain name to an IPv4 address.
     A = 1,
