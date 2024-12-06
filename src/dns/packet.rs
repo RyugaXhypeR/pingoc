@@ -1,5 +1,5 @@
 use super::{buffer::PacketBuffer, header::Header, question::Question, record::Record};
-use std::error::Error;
+use std::{error::Error, net::Ipv4Addr};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -63,5 +63,52 @@ impl Packet {
         self.authorities.iter().try_for_each(|a| a.write(buffer))?;
         self.additional.iter().try_for_each(|a| a.write(buffer))?;
         Ok(())
+    }
+
+    pub fn get_nameservers<'a>(
+        &'a self,
+        query_name: &'a str,
+    ) -> impl Iterator<Item = (&'a str, &'a str)> {
+        self.authorities.iter().filter_map(move |record| {
+            if let Record::NS { domain, host, .. } = record {
+                if query_name.ends_with(domain) {
+                    Some((domain.as_str(), host.as_str()))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+    }
+
+    pub fn get_resolved_nameserver(&self, query_name: &str) -> Option<Ipv4Addr> {
+        self.get_nameservers(query_name)
+            .flat_map(|(_, host)| {
+                self.additional
+                    .iter()
+                    .filter_map(move |record| match record {
+                        Record::A { domain, addr, .. } if domain == host => Some(addr),
+                        _ => None,
+                    })
+            })
+            .map(|addr| *addr)
+            .next()
+    }
+
+    pub fn get_uresolved_nameserver<'a>(&'a self, query_name: &'a str) -> Option<&'a str> {
+        self.get_nameservers(query_name)
+            .map(|(_, host)| host)
+            .next()
+    }
+
+    pub fn get_a_record(&self) -> Option<Ipv4Addr> {
+        self.answers
+            .iter()
+            .filter_map(|record| match record {
+                Record::A { addr, .. } => Some(*addr),
+                _ => None,
+            })
+            .next()
     }
 }
