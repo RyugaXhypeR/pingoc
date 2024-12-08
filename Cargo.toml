@@ -1,5 +1,8 @@
 [package]
-name = "ping"
+name = "pingoc"
 version = "0.1.0"
 edition = "2021"
+
+[dependencies]
+socket2 = { version = "0.5.8", features = ["all"] }
 
