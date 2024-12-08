@@ -1,6 +1,6 @@
 use super::{
     buffer::PacketBuffer,
-    query::{QueryClass, QueryType},
+    query::{DnsQueryClass, DnsQueryType},
 };
 use std::error::Error;
 
@@ -9,8 +9,8 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 #[derive(Debug, PartialEq, Eq)]
 pub struct DnsQuestion {
     pub name: String,
-    pub query_type: QueryType,
-    pub query_class: QueryClass,
+    pub query_type: DnsQueryType,
+    pub query_class: DnsQueryClass,
 }
 
 impl DnsQuestion {
@@ -28,19 +28,19 @@ impl DnsQuestion {
     |                     QCLASS                    |
     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
     */
-    pub fn new(name: String, query_type: QueryType) -> Self {
+    pub fn new(name: String, query_type: DnsQueryType) -> Self {
         Self {
             name,
             query_type,
-            query_class: QueryClass::IN,
+            query_class: DnsQueryClass::IN,
         }
     }
 
     pub fn read(buffer: &mut PacketBuffer) -> Result<Self> {
-        let mut question = DnsQuestion::new("".to_string(), QueryType::A);
+        let mut question = DnsQuestion::new("".to_string(), DnsQueryType::A);
         question.name = buffer.read_query_name()?;
-        question.query_type = QueryType::from_u16(buffer.read_u16()?);
-        question.query_class = QueryClass::from_u16(buffer.read_u16()?);
+        question.query_type = DnsQueryType::from_u16(buffer.read_u16()?);
+        question.query_class = DnsQueryClass::from_u16(buffer.read_u16()?);
 
         Ok(question)
     }

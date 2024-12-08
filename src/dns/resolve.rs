@@ -1,12 +1,12 @@
 use crate::dns::header::DnsResponseCode;
 
-use super::{buffer::PacketBuffer, packet::DnsPacket, query::QueryType, question::DnsQuestion};
+use super::{buffer::PacketBuffer, packet::DnsPacket, query::DnsQueryType, question::DnsQuestion};
 use std::error::Error;
 use std::net::{Ipv4Addr, UdpSocket};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-pub fn lookup(domain: &str, query_type: QueryType, server: (Ipv4Addr, u16)) -> Result<DnsPacket> {
+pub fn lookup(domain: &str, query_type: DnsQueryType, server: (Ipv4Addr, u16)) -> Result<DnsPacket> {
     let socket = UdpSocket::bind(("0.0.0.0", 43210))?;
     let mut packet = DnsPacket::new();
 
@@ -27,7 +27,7 @@ pub fn lookup(domain: &str, query_type: QueryType, server: (Ipv4Addr, u16)) -> R
     DnsPacket::read(&mut buffer)
 }
 
-pub fn recursive_lookup(query_name: &str, query_type: QueryType) -> Result<DnsPacket> {
+pub fn recursive_lookup(query_name: &str, query_type: DnsQueryType) -> Result<DnsPacket> {
     let mut nameserver = Ipv4Addr::new(198, 41, 0, 4);
     loop {
         if cfg!(debug_assertions) {
@@ -55,7 +55,7 @@ pub fn recursive_lookup(query_name: &str, query_type: QueryType) -> Result<DnsPa
             None => return Ok(response),
         };
 
-        let recursive_response = recursive_lookup(new_nameserver, QueryType::A)?;
+        let recursive_response = recursive_lookup(new_nameserver, DnsQueryType::A)?;
         match recursive_response.get_a_record() {
             Some(ns) => nameserver = ns,
             None => return Ok(response),

@@ -1,4 +1,4 @@
-use super::{buffer::PacketBuffer, header::DnsHeader, question::DnsQuestion, record::Record};
+use super::{buffer::PacketBuffer, header::DnsHeader, question::DnsQuestion, record::DnsRecord};
 use std::{error::Error, net::Ipv4Addr};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
@@ -7,9 +7,9 @@ type Result<T> = std::result::Result<T, Box<dyn Error>>;
 pub struct DnsPacket {
     pub header: DnsHeader,
     pub questions: Vec<DnsQuestion>,
-    pub answers: Vec<Record>,
-    pub authorities: Vec<Record>,
-    pub additional: Vec<Record>,
+    pub answers: Vec<DnsRecord>,
+    pub authorities: Vec<DnsRecord>,
+    pub additional: Vec<DnsRecord>,
 }
 
 impl DnsPacket {
@@ -45,13 +45,13 @@ impl DnsPacket {
             packet.questions.push(DnsQuestion::read(buffer)?);
         }
         for _ in 0..header.answer_count {
-            packet.answers.push(Record::read(buffer)?);
+            packet.answers.push(DnsRecord::read(buffer)?);
         }
         for _ in 0..header.authority_count {
-            packet.authorities.push(Record::read(buffer)?);
+            packet.authorities.push(DnsRecord::read(buffer)?);
         }
         for _ in 0..header.additional_count {
-            packet.additional.push(Record::read(buffer)?);
+            packet.additional.push(DnsRecord::read(buffer)?);
         }
         Ok(packet)
     }
@@ -70,7 +70,7 @@ impl DnsPacket {
         query_name: &'a str,
     ) -> impl Iterator<Item = (&'a str, &'a str)> {
         self.authorities.iter().filter_map(move |record| {
-            if let Record::NS { domain, host, .. } = record {
+            if let DnsRecord::NS { domain, host, .. } = record {
                 if query_name.ends_with(domain) {
                     Some((domain.as_str(), host.as_str()))
                 } else {
@@ -88,7 +88,7 @@ impl DnsPacket {
                 self.additional
                     .iter()
                     .filter_map(move |record| match record {
-                        Record::A { domain, addr, .. } if domain == host => Some(addr),
+                        DnsRecord::A { domain, addr, .. } if domain == host => Some(addr),
                         _ => None,
                     })
             })
@@ -106,7 +106,7 @@ impl DnsPacket {
         self.answers
             .iter()
             .filter_map(|record| match record {
-                Record::A { addr, .. } => Some(*addr),
+                DnsRecord::A { addr, .. } => Some(*addr),
                 _ => None,
             })
             .next()
