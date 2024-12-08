@@ -1,11 +1,11 @@
-mod dns;
-
 use std::error::Error;
 use std::net::{IpAddr, Ipv4Addr, ToSocketAddrs};
 
-use dns::header::ResponseCode;
-use dns::query::QueryType;
-use dns::resolve::{lookup, recursive_lookup};
+use pingoc::dns::header::DnsResponseCode;
+use pingoc::dns::query::DnsQueryType;
+use pingoc::dns::resolve::{  lookup, recursive_lookup};
+use pingoc::icmp::packet::IcmpPacket;
+use pingoc::icmp::socket::IcmpSocket;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -20,8 +20,8 @@ pub fn resolve_hostname(hostname: &str) -> Option<IpAddr> {
     }
 
     // Fallback: Use a custom lookup function with Google's public DNS server.
-    if let Ok(response) = lookup(hostname, QueryType::A, SERVER) {
-        if response.header.response_code == ResponseCode::NoError {
+    if let Ok(response) = lookup(hostname, DnsQueryType::A, SERVER) {
+        if response.header.response_code == DnsResponseCode::NoError {
             if let Some(a_record) = response.get_a_record() {
                 return Some(IpAddr::V4(a_record));
             }
@@ -29,7 +29,7 @@ pub fn resolve_hostname(hostname: &str) -> Option<IpAddr> {
     }
 
     // Final fallback: Use a recursive lookup if the above methods fail.
-    if let Ok(response) = recursive_lookup(hostname, QueryType::A) {
+    if let Ok(response) = recursive_lookup(hostname, DnsQueryType::A) {
         if let Some(a_record) = response.get_a_record() {
             return Some(IpAddr::V4(a_record));
         }
@@ -39,22 +39,17 @@ pub fn resolve_hostname(hostname: &str) -> Option<IpAddr> {
 }
 
 fn main() -> Result<()> {
-    let hostnames = [
-        "192.168.1.1",
-        "2345.12.12.1",
-        "ryuga.com",
-        "google.com",
-        "ww.example.com",
-        "something.com",
-    ];
+    let hostname = "google.com";
+    let ip = match resolve_hostname(hostname).unwrap() {
+        IpAddr::V4(v4) => Some(v4),
+        _ => None,
+    };
+    let ip = ip.unwrap();
 
-    for hostname in hostnames {
-        if let Some(ip) = resolve_hostname(hostname) {
-            println!("Resolved {hostname}: {ip}");
-        } else {
-            println!("Unable to resolve {hostname}");
-        }
-    }
+    let mut packet = IcmpPacket::default();
+    let socket = IcmpSocket::new()?;
+    socket.connect(ip)?;
+    socket.send(&mut packet)?;
 
     Ok(())
 }
