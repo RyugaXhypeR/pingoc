@@ -1,7 +1,7 @@
 /// Represents DNS query types.
 #[repr(u16)]
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum QueryType {
+pub enum DnsQueryType {
     /// A record maps a domain name to an IPv4 address.
     A = 1,
     /// NS record maps a domain name to a name server.
@@ -24,7 +24,7 @@ pub enum QueryType {
     UNKNOWN(u16),
 }
 
-impl QueryType {
+impl DnsQueryType {
     /// Converts a `u16` value into a `QueryType` enum.
     pub fn from_u16(value: u16) -> Self {
         match value {
@@ -61,7 +61,7 @@ impl QueryType {
 /// Represents DNS query classes.
 #[repr(u16)]
 #[derive(PartialEq, Eq, Debug)]
-pub enum QueryClass {
+pub enum DnsQueryClass {
     /// Internet class (most common).
     IN = 1,
     /// Chaos class (experimental).
@@ -80,7 +80,7 @@ pub enum QueryClass {
     UNASSIGNED,
 }
 
-impl QueryClass {
+impl DnsQueryClass {
     /// Converts a `u16` value into a `QueryClass` enum.
     pub fn from_u16(value: u16) -> Self {
         match value {
