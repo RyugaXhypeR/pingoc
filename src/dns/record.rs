@@ -1,12 +1,12 @@
-use super::query::QueryClass;
-use super::{buffer::PacketBuffer, query::QueryType};
+use super::query::DnsQueryClass;
+use super::{buffer::PacketBuffer, query::DnsQueryType};
 use std::error::Error;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum Record {
+pub enum DnsRecord {
     /// A (Address) record maps a domain to an IPv4 address
     A {
         domain: String,
@@ -74,13 +74,13 @@ pub enum Record {
     /// Represents an unknown record type
     UNKNOWN {
         domain: String,
-        query_type: QueryType,
+        query_type: DnsQueryType,
         data: Vec<u8>,
         ttl: u32,
     },
 }
 
-impl Record {
+impl DnsRecord {
     /* DNS Resource Record
 
                                     1  1  1  1  1  1
@@ -104,27 +104,27 @@ impl Record {
     /                                               /
     +--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+--+
     */
-    pub fn read(buffer: &mut PacketBuffer) -> Result<Record> {
+    pub fn read(buffer: &mut PacketBuffer) -> Result<DnsRecord> {
         let domain = buffer.read_query_name()?;
-        let query_type = QueryType::from_u16(buffer.read_u16()?);
-        let _query_class = QueryClass::from_u16(buffer.read_u16()?);
+        let query_type = DnsQueryType::from_u16(buffer.read_u16()?);
+        let _query_class = DnsQueryClass::from_u16(buffer.read_u16()?);
         let ttl = buffer.read_u32()?;
         let length = buffer.read_u16()?;
 
         match query_type {
-            QueryType::A => {
+            DnsQueryType::A => {
                 let addr = Ipv4Addr::from(buffer.read_u32()?);
-                Ok(Record::A { domain, addr, ttl })
+                Ok(DnsRecord::A { domain, addr, ttl })
             }
-            QueryType::NS => {
+            DnsQueryType::NS => {
                 let host = buffer.read_query_name()?;
-                Ok(Record::NS { domain, host, ttl })
+                Ok(DnsRecord::NS { domain, host, ttl })
             }
-            QueryType::CNAME => {
+            DnsQueryType::CNAME => {
                 let host = buffer.read_query_name()?;
-                Ok(Record::CNAME { domain, host, ttl })
+                Ok(DnsRecord::CNAME { domain, host, ttl })
             }
-            QueryType::SOA => {
+            DnsQueryType::SOA => {
                 let primary_ns = buffer.read_query_name()?;
                 let mailbox = buffer.read_query_name()?;
                 let serial = buffer.read_u32()?;
@@ -132,7 +132,7 @@ impl Record {
                 let retry = buffer.read_u32()?;
                 let expire = buffer.read_u32()?;
                 let minimum_ttl = buffer.read_u32()?;
-                Ok(Record::SOA {
+                Ok(DnsRecord::SOA {
                     domain,
                     primary_ns,
                     mailbox,
@@ -144,35 +144,35 @@ impl Record {
                     ttl,
                 })
             }
-            QueryType::PTR => {
+            DnsQueryType::PTR => {
                 let host = buffer.read_query_name()?;
-                Ok(Record::PTR { domain, host, ttl })
+                Ok(DnsRecord::PTR { domain, host, ttl })
             }
-            QueryType::MX => {
+            DnsQueryType::MX => {
                 let priority = buffer.read_u16()?;
                 let host = buffer.read_query_name()?;
-                Ok(Record::MX {
+                Ok(DnsRecord::MX {
                     domain,
                     priority,
                     host,
                     ttl,
                 })
             }
-            QueryType::TXT => {
+            DnsQueryType::TXT => {
                 let txt_data = buffer.read_bytes(length as usize)?;
                 let text = String::from_utf8_lossy(txt_data).into_owned();
-                Ok(Record::TXT { domain, text, ttl })
+                Ok(DnsRecord::TXT { domain, text, ttl })
             }
-            QueryType::AAAA => {
+            DnsQueryType::AAAA => {
                 let addr = Ipv6Addr::from(buffer.read_u128()?);
-                Ok(Record::AAAA { domain, addr, ttl })
+                Ok(DnsRecord::AAAA { domain, addr, ttl })
             }
-            QueryType::SRV => {
+            DnsQueryType::SRV => {
                 let priority = buffer.read_u16()?;
                 let weight = buffer.read_u16()?;
                 let port = buffer.read_u16()?;
                 let target = buffer.read_query_name()?;
-                Ok(Record::SRV {
+                Ok(DnsRecord::SRV {
                     domain,
                     priority,
                     weight,
@@ -183,7 +183,7 @@ impl Record {
             }
             _ => {
                 let data = buffer.read_bytes(length as usize)?.to_vec();
-                Ok(Record::UNKNOWN {
+                Ok(DnsRecord::UNKNOWN {
                     domain,
                     query_type,
                     data,
@@ -194,45 +194,45 @@ impl Record {
     }
     pub fn write(&self, buffer: &mut PacketBuffer) -> Result<()> {
         match self {
-            Record::A {
+            DnsRecord::A {
                 ref domain,
                 ref addr,
                 ttl,
             } => {
                 buffer.write_query_name(domain)?;
-                buffer.write_u16(QueryType::A.to_u16())?;
+                buffer.write_u16(DnsQueryType::A.to_u16())?;
                 buffer.write_u16(1)?;
                 buffer.write_u32(*ttl)?;
                 buffer.write_u16(4)?;
                 buffer.write_u32(u32::from(*addr))?;
             }
-            Record::NS {
+            DnsRecord::NS {
                 ref domain,
                 ref host,
                 ttl,
             } => {
                 buffer.write_query_name(domain)?;
-                buffer.write_u16(QueryType::NS.to_u16())?;
+                buffer.write_u16(DnsQueryType::NS.to_u16())?;
                 buffer.write_u16(1)?;
                 buffer.write_u32(*ttl)?;
                 let host_bytes = host.as_bytes();
                 buffer.write_u16(host_bytes.len() as u16)?;
                 buffer.write_bytes(host_bytes)?;
             }
-            Record::CNAME {
+            DnsRecord::CNAME {
                 ref domain,
                 ref host,
                 ttl,
             } => {
                 buffer.write_query_name(domain)?;
-                buffer.write_u16(QueryType::CNAME.to_u16())?;
+                buffer.write_u16(DnsQueryType::CNAME.to_u16())?;
                 buffer.write_u16(1)?;
                 buffer.write_u32(*ttl)?;
                 let host_bytes = host.as_bytes();
                 buffer.write_u16(host_bytes.len() as u16)?;
                 buffer.write_bytes(host_bytes)?;
             }
-            Record::SOA {
+            DnsRecord::SOA {
                 ref domain,
                 ref primary_ns,
                 ref mailbox,
@@ -244,7 +244,7 @@ impl Record {
                 ttl,
             } => {
                 buffer.write_query_name(domain)?;
-                buffer.write_u16(QueryType::SOA.to_u16())?;
+                buffer.write_u16(DnsQueryType::SOA.to_u16())?;
                 buffer.write_u16(1)?;
                 buffer.write_u32(*ttl)?;
 
@@ -256,58 +256,58 @@ impl Record {
                 buffer.write_u32(*expire)?;
                 buffer.write_u32(*minimum_ttl)?;
             }
-            Record::PTR {
+            DnsRecord::PTR {
                 ref domain,
                 ref host,
                 ttl,
             } => {
                 buffer.write_query_name(domain)?;
-                buffer.write_u16(QueryType::PTR.to_u16())?;
+                buffer.write_u16(DnsQueryType::PTR.to_u16())?;
                 buffer.write_u16(1)?;
                 buffer.write_u32(*ttl)?;
                 buffer.write_u16(host.len() as u16)?;
                 buffer.write_bytes(host.as_bytes())?;
             }
-            Record::MX {
+            DnsRecord::MX {
                 ref domain,
                 priority,
                 ref host,
                 ttl,
             } => {
                 buffer.write_query_name(domain)?;
-                buffer.write_u16(QueryType::MX.to_u16())?;
+                buffer.write_u16(DnsQueryType::MX.to_u16())?;
                 buffer.write_u16(1)?;
                 buffer.write_u32(*ttl)?;
                 buffer.write_u16(2)?;
                 buffer.write_u16(*priority)?;
                 buffer.write_query_name(host)?;
             }
-            Record::TXT {
+            DnsRecord::TXT {
                 ref domain,
                 ref text,
                 ttl,
             } => {
                 buffer.write_query_name(domain)?;
-                buffer.write_u16(QueryType::TXT.to_u16())?;
+                buffer.write_u16(DnsQueryType::TXT.to_u16())?;
                 buffer.write_u16(1)?;
                 buffer.write_u32(*ttl)?;
                 let txt_bytes = text.as_bytes();
                 buffer.write_u16(txt_bytes.len() as u16)?;
                 buffer.write_bytes(txt_bytes)?;
             }
-            Record::AAAA {
+            DnsRecord::AAAA {
                 ref domain,
                 ref addr,
                 ttl,
             } => {
                 buffer.write_query_name(domain)?;
-                buffer.write_u16(QueryType::AAAA.to_u16())?;
+                buffer.write_u16(DnsQueryType::AAAA.to_u16())?;
                 buffer.write_u16(1)?;
                 buffer.write_u32(*ttl)?;
                 buffer.write_u16(16)?;
                 buffer.write_u128(u128::from(*addr))?;
             }
-            Record::SRV {
+            DnsRecord::SRV {
                 ref domain,
                 priority,
                 weight,
@@ -316,7 +316,7 @@ impl Record {
                 ttl,
             } => {
                 buffer.write_query_name(domain)?;
-                buffer.write_u16(QueryType::SRV.to_u16())?;
+                buffer.write_u16(DnsQueryType::SRV.to_u16())?;
                 buffer.write_u16(1)?;
                 buffer.write_u32(*ttl)?;
                 buffer.write_u16(6)?;
@@ -325,7 +325,7 @@ impl Record {
                 buffer.write_u16(*port)?;
                 buffer.write_query_name(target)?;
             }
-            Record::UNKNOWN {
+            DnsRecord::UNKNOWN {
                 ref domain,
                 query_type,
                 ref data,
