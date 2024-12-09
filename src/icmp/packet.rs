@@ -28,9 +28,10 @@ impl Default for IcmpPacket {
 }
 
 impl IcmpPacket {
-    pub fn echo_request(id: u16, sequence_no: u16) -> Self {
+    pub fn echo_request(id: u16, sequence_no: u16, packet_size: usize) -> Self {
         Self {
             content: IcmpContentType::Echo { id, sequence_no },
+            payload: vec![0; packet_size],
             ..Default::default()
         }
     }
