@@ -1,4 +1,4 @@
-use libc::{sockaddr, sockaddr_in, socket, AF_INET, IPPROTO_ICMP, SOCK_DGRAM};
+use libc::{sockaddr_in, socket, AF_INET, IPPROTO_ICMP, SOCK_DGRAM};
 use std::net::Ipv4Addr;
 use std::{io, mem};
 
