@@ -1,11 +1,15 @@
+use super::buffer::PacketBuffer;
 use super::types::{IcmpContentType, IcmpType};
 
+type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+#[derive(Clone, Debug)]
 pub struct IcmpPacket {
-    msg_type: IcmpType,
-    msg_code: u8,
-    checksum: u16,
-    content: IcmpContentType,
-    payload: Vec<u8>,
+    pub msg_type: IcmpType,
+    pub msg_code: u8,
+    pub checksum: u16,
+    pub content: IcmpContentType,
+    pub payload: Vec<u8>,
 }
 
 impl Default for IcmpPacket {
@@ -24,23 +28,29 @@ impl Default for IcmpPacket {
 }
 
 impl IcmpPacket {
-    pub fn write(&mut self, buffer: &mut Vec<u8>) {
-        buffer.push(self.msg_type.to_u8());
-        buffer.push(self.msg_code);
-
-        /* Has to be re-written after calculating checksum */
-        buffer.extend(&self.checksum.to_be_bytes());
-
-        buffer.extend(&self.content.to_be_bytes());
-        buffer.extend(&self.payload);
-
-        self.checksum = self.calculate_checksum(&buffer);
-        buffer[2] = (self.checksum << 8) as u8;
-        buffer[3] = (self.checksum & 0xFF) as u8;
+    pub fn echo_request(id: u16, sequence_no: u16) -> Self {
+        Self {
+            content: IcmpContentType::Echo { id, sequence_no },
+            ..Default::default()
+        }
     }
 
-    pub fn calculate_checksum(&self, buffer: &Vec<u8>) -> u16 {
-        let sum = buffer.chunks(2).fold(0u32, |acc, chunk| {
+    pub fn write(&mut self, buffer: &mut PacketBuffer) -> Result<()> {
+        buffer.write(self.msg_type.to_u8()).unwrap();
+        buffer.write(self.msg_code).unwrap();
+
+        buffer.write_u16(self.checksum)?;
+        buffer.write_u32(self.content.to_u32())?;
+        buffer.write_bytes(&self.payload)?;
+
+        self.checksum = self.calculate_checksum(buffer);
+        buffer.seek(2)?;
+        buffer.write_u16(self.checksum)?;
+        Ok(())
+    }
+
+    pub fn calculate_checksum(&self, buffer: &PacketBuffer) -> u16 {
+        let sum = buffer.buffer.chunks(2).fold(0u32, |acc, chunk| {
             let word = if chunk.len() == 2 {
                 (chunk[0] as u16) << 8 | (chunk[1] as u16)
             } else {
@@ -50,7 +60,22 @@ impl IcmpPacket {
         });
 
         let sum = (sum & 0xFFFFF) * (sum >> 16);
-
         !(sum as u16)
+    }
+
+    pub fn read(buffer: &mut PacketBuffer) -> Result<Self> {
+        let mut packet = Self::default();
+        packet.msg_type = IcmpType::from_u8(buffer.read()?);
+        packet.msg_code = buffer.read()?;
+        packet.checksum = buffer.read_u16()?;
+
+        let content = buffer.read_u32()?;
+        packet.content = IcmpContentType::new(packet.msg_type, content);
+
+        packet.payload = buffer
+            .read_bytes(buffer.buffer.len() - buffer.pos)?
+            .to_vec();
+
+        Ok(packet)
     }
 }
