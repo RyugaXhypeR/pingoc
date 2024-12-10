@@ -1,5 +1,8 @@
-use super::{buffer::PacketBuffer, header::DnsHeader, question::DnsQuestion, record::DnsRecord};
-use std::{error::Error, net::Ipv4Addr};
+use super::{
+    buffer::PacketBuffer, header::DnsHeader, query::DnsQueryType, question::DnsQuestion,
+    record::DnsRecord,
+};
+use std::{error::Error, net::IpAddr};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -82,17 +85,29 @@ impl DnsPacket {
         })
     }
 
-    pub fn get_resolved_nameserver(&self, query_name: &str) -> Option<Ipv4Addr> {
+    pub fn get_resolved_nameserver(
+        &self,
+        query_name: &str,
+        query_type: DnsQueryType,
+    ) -> Option<IpAddr> {
         self.get_nameservers(query_name)
             .flat_map(|(_, host)| {
                 self.additional
                     .iter()
                     .filter_map(move |record| match record {
-                        DnsRecord::A { domain, addr, .. } if domain == host => Some(addr),
+                        DnsRecord::A { domain, addr, .. }
+                            if domain == host && record.matches_query_type(query_type) =>
+                        {
+                            Some(IpAddr::V4(*addr))
+                        }
+                        DnsRecord::AAAA { domain, addr, .. }
+                            if domain == host && record.matches_query_type(query_type) =>
+                        {
+                            Some(IpAddr::V6(*addr))
+                        }
                         _ => None,
                     })
             })
-            .map(|addr| *addr)
             .next()
     }
 
@@ -102,13 +117,14 @@ impl DnsPacket {
             .next()
     }
 
-    pub fn get_a_record(&self) -> Option<Ipv4Addr> {
+    pub fn get_record(&self, query_type: DnsQueryType) -> Option<IpAddr> {
         self.answers
             .iter()
-            .filter_map(|record| match record {
-                DnsRecord::A { addr, .. } => Some(*addr),
+            .find(|record| record.matches_query_type(query_type))
+            .and_then(|record| match record {
+                DnsRecord::A { addr, .. } => Some(IpAddr::V4(*addr)),
+                DnsRecord::AAAA { addr, .. } => Some(IpAddr::V6(*addr)),
                 _ => None,
             })
-            .next()
     }
 }
