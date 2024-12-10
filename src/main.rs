@@ -126,12 +126,7 @@ fn ping_handler(args: PingArgs) -> Result<()> {
     let mut remaining_count = args.count;
 
     // Ping loop
-    while !interrupt.load(Ordering::SeqCst)
-        && match remaining_count {
-            Some(cnt) => cnt > 0,
-            None => true,
-        }
-    {
+    while !interrupt.load(Ordering::SeqCst) && remaining_count.map_or(true, |cnt| cnt > 0) {
         stats.packets_sent += 1;
         stats.bytes_sent += args.packet_size as f32;
 
