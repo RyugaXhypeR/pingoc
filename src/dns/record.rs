@@ -341,4 +341,26 @@ impl DnsRecord {
         }
         Ok(())
     }
+
+    pub fn matches_query_type(&self, query_type: DnsQueryType) -> bool {
+        match (self, query_type) {
+            (Self::A { .. }, DnsQueryType::A) => true,
+            (Self::NS { .. }, DnsQueryType::NS) => true,
+            (Self::CNAME { .. }, DnsQueryType::CNAME) => true,
+            (Self::SOA { .. }, DnsQueryType::SOA) => true,
+            (Self::PTR { .. }, DnsQueryType::PTR) => true,
+            (Self::MX { .. }, DnsQueryType::MX) => true,
+            (Self::TXT { .. }, DnsQueryType::TXT) => true,
+            (Self::AAAA { .. }, DnsQueryType::AAAA) => true,
+            (Self::SRV { .. }, DnsQueryType::SRV) => true,
+            (
+                Self::UNKNOWN {
+                    query_type: record_query_type,
+                    ..
+                },
+                query_type,
+            ) if record_query_type == &query_type => true,
+            _ => false,
+        }
+    }
 }
