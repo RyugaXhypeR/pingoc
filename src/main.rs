@@ -25,7 +25,6 @@ struct PingStats {
 #[command(version, about, long_about = None)]
 struct PingArgs {
     /// Ping destination (hostname or IP)
-    #[arg(short, long)]
     destination: String,
 
     /// Number of ping requests to send
@@ -83,9 +82,10 @@ fn send_ping(
                 IcmpContentType::Echo { id: _, sequence_no } => sequence_no,
                 _ => 1,
             };
+            let ttl = socket.get_ttl()?;
 
             if !quiet {
-                println!("{num_bytes} bytes from {ip}: icmp_seq={icmp_seq} ttl=");
+                println!("{num_bytes} bytes from {ip}: icmp_seq={icmp_seq} ttl={ttl}");
             }
 
             Ok(Some(num_bytes))
