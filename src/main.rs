@@ -1,40 +1,44 @@
 use clap::Parser;
-use ctrlc::set_handler;
-use pingoc::icmp::types::IcmpContentType;
+use pingoc::resolve::resolve_hostname;
 use std::error::Error;
-use std::net::{IpAddr, Ipv4Addr, ToSocketAddrs};
-use std::sync::{Arc, Mutex};
+use std::net::{IpAddr, Ipv4Addr};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use pingoc::dns::header::DnsResponseCode;
-use pingoc::dns::query::DnsQueryType;
-use pingoc::dns::resolve::{lookup, recursive_lookup};
 use pingoc::icmp::packet::IcmpPacket;
 use pingoc::icmp::socket::IcmpSocket;
+use pingoc::icmp::types::IcmpContentType;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-const SERVER: (Ipv4Addr, u16) = (Ipv4Addr::new(8, 8, 8, 8), 53);
+struct PingStats {
+    packets_sent: usize,
+    packets_recv: usize,
+    bytes_sent: f32,
+    bytes_recv: f32,
+}
 
+/// Command-line arguments for pingoc
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
-pub struct Args {
-    /// Ping destination
+struct PingArgs {
+    /// Ping destination (hostname or IP)
     #[arg(short, long)]
     destination: String,
 
     /// Number of ping requests to send
-    #[arg(short, long, default_value_t = usize::MAX)]
-    count: usize,
+    #[arg(short, long)]
+    count: Option<usize>,
 
     /// Suppress output, only show summary
     #[arg(short, long)]
     quiet: bool,
 
-    /// Set the timeout for each ping request in milliseconds
-    #[arg(short, long, default_value_t = 1000)]
-    timeout: u64,
+    /// Set the timeout for each ping request in seconds
+    #[arg(short, long, default_value_t = 1)]
+    timeout: usize,
 
     /// Ping with a specific packet size (in bytes)
     #[arg(short, long, default_value_t = 56)]
@@ -49,118 +53,119 @@ pub struct Args {
     verbose: bool,
 }
 
-pub fn resolve_hostname(hostname: &str) -> Option<IpAddr> {
-    // First, try resolving the hostname using the system's DNS resolver.
-    if let Ok(mut resolved) = (hostname, 0).to_socket_addrs() {
-        if let Some(socket_addr) = resolved.next() {
-            return Some(socket_addr.ip());
-        }
-    }
+/// Configure keyboard interrupt handling
+fn setup_interrupt_handler() -> Arc<AtomicBool> {
+    let interrupt = Arc::new(AtomicBool::new(false));
+    let handler_interrupt = Arc::clone(&interrupt);
 
-    // Fallback: Use a custom lookup function with Google's public DNS server.
-    if let Ok(response) = lookup(hostname, DnsQueryType::A, SERVER) {
-        if response.header.response_code == DnsResponseCode::NoError {
-            if let Some(a_record) = response.get_a_record() {
-                return Some(IpAddr::V4(a_record));
-            }
-        }
-    }
+    ctrlc::set_handler(move || {
+        handler_interrupt.store(true, Ordering::SeqCst);
+    })
+    .expect("Error setting Ctrl-C handler");
 
-    // Final fallback: Use a recursive lookup if the above methods fail.
-    if let Ok(response) = recursive_lookup(hostname, DnsQueryType::A) {
-        if let Some(a_record) = response.get_a_record() {
-            return Some(IpAddr::V4(a_record));
-        }
-    }
-
-    None
+    interrupt
 }
 
-fn ping_handler(args: Args) -> Result<()> {
-    let hostname = &args.destination;
-    let ip = match resolve_hostname(hostname) {
+fn send_ping(
+    socket: &mut IcmpSocket,
+    ip: Ipv4Addr,
+    id: u16,
+    packet_size: usize,
+    quiet: bool,
+) -> Result<Option<usize>> {
+    let mut packet = IcmpPacket::echo_request(id, 0, packet_size);
+    socket.send(&mut packet)?;
+
+    match socket.recv() {
+        Ok(received_packet) => {
+            let num_bytes = received_packet.payload.len();
+            let icmp_seq = match received_packet.content {
+                IcmpContentType::Echo { id: _, sequence_no } => sequence_no,
+                _ => 1,
+            };
+
+            if !quiet {
+                println!("{num_bytes} bytes from {ip}: icmp_seq={icmp_seq} ttl=");
+            }
+
+            Ok(Some(num_bytes))
+        }
+        Err(e) => {
+            eprintln!("Error receiving packet: {e}");
+            Ok(None)
+        }
+    }
+}
+
+fn ping_handler(args: PingArgs) -> Result<()> {
+    let ip = match resolve_hostname(&args.destination) {
         Some(IpAddr::V4(v4)) => v4,
         _ => return Err("Failed to resolve hostname".into()),
     };
 
-    let mut socket = IcmpSocket::new()?;
+    let mut socket = IcmpSocket::new(args.timeout)?;
     socket.connect(ip)?;
+    let interrupt = setup_interrupt_handler();
 
-    let mut id = 1;
-    let mut count = args.count;
+    let mut stats = PingStats {
+        packets_sent: 0,
+        packets_recv: 0,
+        bytes_sent: 0.0,
+        bytes_recv: 0.0,
+    };
 
     println!(
-        "Pingoc: {hostname} ({ip}) with {}({}) bytes of data.",
+        "Pingoc: {} ({}) with {}({}) bytes of data.",
+        args.destination,
+        ip,
         args.packet_size,
         args.packet_size + 28
     );
 
-    let mut num_packets_sent = 0;
-    let mut num_packets_recv = 0;
+    let mut id = 1;
+    let mut remaining_count = args.count;
 
-    let mut num_bytes_sent = 0f32;
-    let mut num_bytes_recv = 0f32;
-
-    let intr = Arc::new(Mutex::new(false));
-    let intr_lock = Arc::clone(&intr);
-    set_handler(move || {
-        let mut intr = intr_lock.lock().unwrap();
-        *intr = true;
-    })?;
-
-    loop {
-        if *intr.lock().unwrap() {
-            break;
+    // Ping loop
+    while !interrupt.load(Ordering::SeqCst)
+        && match remaining_count {
+            Some(cnt) => cnt > 0,
+            None => true,
         }
+    {
+        stats.packets_sent += 1;
+        stats.bytes_sent += args.packet_size as f32;
 
-        let mut packet = IcmpPacket::echo_request(id, 0, args.packet_size);
-        socket.send(&mut packet)?;
-        num_packets_sent += 1;
-        num_bytes_sent += args.packet_size as f32;
-
-        match socket.recv() {
-            Ok(received_packet) => {
-                num_packets_recv += 1;
-
-                let num_bytes = received_packet.payload.len();
-                num_bytes_recv += num_bytes as f32;
-
-                let icmp_seq = match received_packet.content {
-                    IcmpContentType::Echo { id: _, sequence_no } => sequence_no,
-                    _ => 1,
-                };
-
-                if !args.quiet {
-                    println!("{num_bytes} bytes from {ip}: icmp_seq={icmp_seq} ttl= time=");
-                }
-            }
-            Err(e) => {
-                eprintln!("Error receiving packet: {e}");
-            }
+        if let Some(recv_bytes) = send_ping(&mut socket, ip, id, args.packet_size, args.quiet)? {
+            stats.packets_recv += 1;
+            stats.bytes_recv += recv_bytes as f32;
         }
 
         id += 1;
-        if count != usize::MAX {
-            count -= 1;
-            if count == 0 {
-                break;
-            }
-        }
 
-        // Sleep for the specified interval before sending the next request
+        remaining_count = remaining_count.map(|cnt| cnt - 1);
         thread::sleep(Duration::from_secs(args.interval));
     }
 
-    println!("--- {hostname} ping statistics ---");
-    println!(
-        "{num_packets_sent} bytes transmitted, {num_packets_recv} received, {:.1}% packet loss",
-        100f32 - (num_bytes_recv / num_bytes_sent * 100f32)
-    );
+    print_ping_stats(&args.destination, &stats);
 
     Ok(())
 }
 
+fn print_ping_stats(hostname: &str, stats: &PingStats) {
+    println!("--- {hostname} ping statistics ---");
+    let packet_loss = if stats.bytes_sent > 0.0 {
+        100.0 - (stats.bytes_recv / stats.bytes_sent * 100.0)
+    } else {
+        0.0
+    };
+
+    println!(
+        "{} bytes transmitted, {} received, {:.1}% packet loss",
+        stats.bytes_sent as usize, stats.bytes_recv as usize, packet_loss
+    );
+}
+
 fn main() -> Result<()> {
-    let args = Args::parse();
+    let args = PingArgs::parse();
     ping_handler(args)
 }
