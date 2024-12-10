@@ -45,8 +45,8 @@ struct PingArgs {
     packet_size: usize,
 
     /// Set the interval between pings in seconds
-    #[arg(short, long, default_value_t = 1)]
-    interval: u64,
+    #[arg(short, long, default_value_t = 0.5)]
+    interval: f64,
 
     /// Enable verbose output
     #[arg(short, long)]
@@ -143,7 +143,7 @@ fn ping_handler(args: PingArgs) -> Result<()> {
         id += 1;
 
         remaining_count = remaining_count.map(|cnt| cnt - 1);
-        thread::sleep(Duration::from_secs(args.interval));
+        thread::sleep(Duration::from_secs_f64(args.interval));
     }
 
     print_ping_stats(&args.destination, &stats);
