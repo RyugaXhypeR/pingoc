@@ -15,17 +15,55 @@ pub struct IcmpSocket {
 }
 
 impl IcmpSocket {
-    pub fn new() -> io::Result<Self> {
+    pub fn new(timeout: usize) -> Result<Self> {
         let socket = unsafe { socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP) };
         if socket < 0 {
-            return Err(io::Error::last_os_error());
+            return Err(Box::new(io::Error::last_os_error()));
         }
 
         let mut address: sockaddr_in = unsafe { std::mem::zeroed() };
         address.sin_family = AF_INET as u16;
         address.sin_port = 0;
 
-        Ok(Self { socket, address })
+        let icmp_socket = Self { socket, address };
+        icmp_socket.set_timeout(timeout)?;
+        Ok(icmp_socket)
+    }
+
+    fn set_timeout(&self, timeout: usize) -> Result<()> {
+        let mut timeout_tval: libc::timeval = unsafe { std::mem::zeroed() };
+        timeout_tval.tv_sec = timeout as i64;
+        timeout_tval.tv_usec = 0;
+
+        let result = unsafe {
+            libc::setsockopt(
+                self.socket,
+                libc::SOL_SOCKET,
+                libc::SO_RCVTIMEO,
+                &timeout_tval as *const _ as *const libc::c_void,
+                mem::size_of_val(&timeout_tval) as u32,
+            )
+        };
+
+        if result < 0 {
+            return Err(Box::new(io::Error::last_os_error()));
+        }
+
+        let result = unsafe {
+            libc::setsockopt(
+                self.socket,
+                libc::SOL_SOCKET,
+                libc::SO_SNDTIMEO,
+                &timeout_tval as *const _ as *const libc::c_void,
+                mem::size_of_val(&timeout_tval) as u32,
+            )
+        };
+
+        if result < 0 {
+            return Err(Box::new(io::Error::last_os_error()));
+        }
+
+        Ok(())
     }
 
     pub fn connect(&mut self, ip: Ipv4Addr) -> io::Result<()> {
