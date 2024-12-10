@@ -65,10 +65,12 @@ impl IcmpPacket {
     }
 
     pub fn read(buffer: &mut PacketBuffer) -> Result<Self> {
-        let mut packet = Self::default();
-        packet.msg_type = IcmpType::from_u8(buffer.read()?);
-        packet.msg_code = buffer.read()?;
-        packet.checksum = buffer.read_u16()?;
+        let mut packet = IcmpPacket {
+            msg_type: IcmpType::from_u8(buffer.read()?),
+            msg_code: buffer.read()?,
+            checksum: buffer.read_u16()?,
+            ..Default::default()
+        };
 
         let content = buffer.read_u32()?;
         packet.content = IcmpContentType::new(packet.msg_type, content);
