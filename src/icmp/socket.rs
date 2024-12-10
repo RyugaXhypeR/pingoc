@@ -1,4 +1,4 @@
-use libc::{sockaddr_in, socket, AF_INET, IPPROTO_ICMP, SOCK_DGRAM};
+use libc::{sockaddr_in, socket, AF_INET, IPPROTO_ICMP, IP_RECVTTL, SOCK_DGRAM};
 use std::net::Ipv4Addr;
 use std::{io, mem};
 
@@ -18,6 +18,19 @@ impl IcmpSocket {
     pub fn new(timeout: usize) -> Result<Self> {
         let socket = unsafe { socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP) };
         if socket < 0 {
+            return Err(Box::new(io::Error::last_os_error()));
+        }
+
+        let result = unsafe {
+            libc::setsockopt(
+                socket,
+                libc::IPPROTO_IP,
+                IP_RECVTTL,
+                &(1 as libc::c_int) as *const libc::c_int as *const libc::c_void,
+                mem::size_of::<libc::c_int>() as u32,
+            )
+        };
+        if result < 0 {
             return Err(Box::new(io::Error::last_os_error()));
         }
 
@@ -119,5 +132,26 @@ impl IcmpSocket {
         let mut packet_buffer = PacketBuffer::from(&buffer[..recv_sz]);
 
         IcmpPacket::read(&mut packet_buffer)
+    }
+
+    pub fn get_ttl(&self) -> Result<u32> {
+        let mut ttl: u32 = 0;
+        let mut len: u32 = mem::size_of::<u32>() as u32;
+
+        let result = unsafe {
+            libc::getsockopt(
+                self.socket,
+                libc::IPPROTO_IP,
+                libc::IP_TTL,
+                &mut ttl as *mut u32 as *mut libc::c_void,
+                &mut len,
+            )
+        };
+
+        if result < 0 {
+            return Err(Box::new(io::Error::last_os_error()));
+        }
+
+        Ok(ttl)
     }
 }
