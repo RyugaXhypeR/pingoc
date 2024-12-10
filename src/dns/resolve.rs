@@ -2,11 +2,11 @@ use crate::dns::header::DnsResponseCode;
 
 use super::{buffer::PacketBuffer, packet::DnsPacket, query::DnsQueryType, question::DnsQuestion};
 use std::error::Error;
-use std::net::{Ipv4Addr, UdpSocket};
+use std::net::{IpAddr, Ipv4Addr, UdpSocket};
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
-pub fn lookup(domain: &str, query_type: DnsQueryType, server: (Ipv4Addr, u16)) -> Result<DnsPacket> {
+pub fn lookup(domain: &str, query_type: DnsQueryType, server: (IpAddr, u16)) -> Result<DnsPacket> {
     let socket = UdpSocket::bind(("0.0.0.0", 43210))?;
     let mut packet = DnsPacket::new();
 
@@ -28,7 +28,7 @@ pub fn lookup(domain: &str, query_type: DnsQueryType, server: (Ipv4Addr, u16)) -
 }
 
 pub fn recursive_lookup(query_name: &str, query_type: DnsQueryType) -> Result<DnsPacket> {
-    let mut nameserver = Ipv4Addr::new(198, 41, 0, 4);
+    let mut nameserver = IpAddr::V4(Ipv4Addr::new(198, 41, 0, 4));
     loop {
         if cfg!(debug_assertions) {
             println!(
@@ -39,13 +39,14 @@ pub fn recursive_lookup(query_name: &str, query_type: DnsQueryType) -> Result<Dn
         let server = (nameserver, 53);
         let response = lookup(query_name, query_type, server)?;
 
-        if (!response.answers.is_empty() && response.header.response_code == DnsResponseCode::NoError)
+        if (!response.answers.is_empty()
+            && response.header.response_code == DnsResponseCode::NoError)
             || response.header.response_code == DnsResponseCode::NxDomain
         {
             return Ok(response);
         }
 
-        if let Some(new_nameserver) = response.get_resolved_nameserver(query_name) {
+        if let Some(new_nameserver) = response.get_resolved_nameserver(query_name, query_type) {
             nameserver = new_nameserver;
             continue;
         }
@@ -55,8 +56,8 @@ pub fn recursive_lookup(query_name: &str, query_type: DnsQueryType) -> Result<Dn
             None => return Ok(response),
         };
 
-        let recursive_response = recursive_lookup(new_nameserver, DnsQueryType::A)?;
-        match recursive_response.get_a_record() {
+        let recursive_response = recursive_lookup(new_nameserver, query_type)?;
+        match recursive_response.get_record(query_type) {
             Some(ns) => nameserver = ns,
             None => return Ok(response),
         };
